@@ -2,10 +2,8 @@
 //   node render.mjs --sheet=23,23.5,24 [--cols=3] [--w=640] --out=out/check.jpg   contact sheet (fast visual check)
 //   node render.mjs --stills=0.8,3,23.8 --out=out/test                          full-res PNG stills
 //   node render.mjs --clip=0:6 --fps=24 --out=out/test.mp4                      short clip with audio
-//   node render.mjs --frames=0:156.6 --workers=4                                full-res JPEG frames → out/frames (resumable)
-//   node render.mjs --encode [--out=out/pdoom.mp4]                               frames + song → MP4
-//   node render.mjs --loop=recursion [--out=out/loop_recursion]                 one cycle of a standalone loop (PNGs)
-//   (--loop also works with --sheet, where the times are loop time)
+//   node render.mjs --frames=0:121.56 --workers=4                                full-res JPEG frames → out/frames (resumable)
+//   node render.mjs --encode [--out=out/oh-my-claude.mp4]                               frames + song → MP4
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, statSync, renameSync, readdirSync } from 'node:fs';
@@ -13,17 +11,17 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
-const CHROME = args.chrome || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const DUR = 156.6, fps = +(args.fps || 24);
+const CHROME = args.chrome || '/usr/bin/google-chrome';
+const DUR = 128.5, fps = +(args.fps || 30);
 const FRAMES_DIR = 'out/frames';
 
 const run = (cmd, a) => new Promise((ok, bad) => { const p = spawn(cmd, a, { stdio: 'inherit' }); p.on('close', c => c ? bad(new Error(cmd + ' exited ' + c)) : ok()); });
 
 if (args.encode) {
-  const out = args.out || 'out/pdoom.mp4', n = readdirSync(FRAMES_DIR).filter(f => f.endsWith('.jpg')).length;
+  const out = args.out || 'out/oh-my-claude.mp4', n = readdirSync(FRAMES_DIR).filter(f => f.endsWith('.jpg')).length;
   console.log(`encoding ${n} frames → ${out}`);
-  await run('ffmpeg', ['-y', '-loglevel', 'error', '-stats', '-framerate', String(fps), '-i', `${FRAMES_DIR}/f%05d.jpg`, '-i', 'assets/pdoom.mp3',
-    '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k',
+  await run('ffmpeg', ['-y', '-loglevel', 'error', '-stats', '-framerate', String(fps), '-i', `${FRAMES_DIR}/f%05d.jpg`, '-i', 'assets/song.mp3',
+    '-map', '0:v', '-map', '1:a', '-af', 'apad', '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k',
     '-movflags', '+faststart', '-shortest', out]);
   console.log('wrote ' + out);
   process.exit(0);
@@ -31,7 +29,7 @@ if (args.encode) {
 
 const browser = await puppeteer.launch({
   executablePath: CHROME, headless: true, protocolTimeout: 0,
-  args: ['--allow-file-access-from-files', '--ignore-gpu-blocklist', '--use-angle=d3d11', '--enable-gpu-rasterization', '--window-size=1920,1080', '--disable-renderer-backgrounding', '--disable-background-timer-throttling']
+  args: ['--allow-file-access-from-files', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--window-size=1920,1080', '--disable-renderer-backgrounding', '--disable-background-timer-throttling']
 });
 async function openPage(tag = '') {
   const page = await browser.newPage();
@@ -39,7 +37,6 @@ async function openPage(tag = '') {
   page.on('pageerror', e => console.log(`[page error${tag}]`, e.message));
   await page.goto(pathToFileURL(resolve('studio.html')).href + '?render', { waitUntil: 'networkidle0' });
   await page.waitForFunction('window.ready === true', { timeout: 60000 });
-  if (args.loop) await page.evaluate(name => { window.LOOP = LOOPS[name]; }, args.loop);
   return page;
 }
 const frameOf = async (page, t, type, q) => {
@@ -55,23 +52,11 @@ if (args.sheet) {
   console.log(`${out}  ms/frame: ${ms.join(' ')}`);
 } else if (args.stills) {
   const page = await openPage(), out = args.out || 'out/stills'; mkdirSync(out, { recursive: true });
-  console.log('GPU:', await page.evaluate(() => window.gpuInfo()));
   for (const s of times(args.stills)) {
     const t0 = Date.now(), buf = await frameOf(page, s, 'image/png');
     const f = `${out}/t${s.toFixed(2).replace('.', '_')}.png`; writeFileSync(f, buf);
     console.log(`${f}  ${Date.now() - t0} ms`);
   }
-} else if (args.loop) {
-  // One full cycle of a standalone loop scene as PNGs (t = loop time); frame n equals frame 0, so it isn't rendered.
-  const out = args.out || `out/loop_${args.loop}`, workers = +(args.workers || 3); mkdirSync(out, { recursive: true });
-  const probe = await openPage(), len = await probe.evaluate(() => window.LOOP.len), n = Math.round(len * fps);
-  await probe.close();
-  let next = 0; const start = Date.now();
-  await Promise.all(Array.from({ length: workers }, async (_, w) => {
-    const page = await openPage('#' + w);
-    while (next < n) { const i = next++; writeFileSync(`${out}/l${String(i).padStart(3, '0')}.png`, await frameOf(page, i / fps, 'image/png')); }
-  }));
-  console.log(`${n} loop frames → ${out}  (${((Date.now() - start) / n).toFixed(0)} ms/frame)`);
 } else if (args.frames) {
   // Parallel, resumable: each worker page pulls the next missing frame index; files are written atomically.
   const [a, b] = String(args.frames).split(':').map(Number), workers = +(args.workers || 4);
@@ -98,7 +83,7 @@ if (args.sheet) {
   const [a, b] = args.clip ? String(args.clip).split(':').map(Number) : [0, DUR];
   const out = args.out || 'out/clip.mp4'; mkdirSync(dirname(out), { recursive: true });
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
-    '-ss', String(a), '-t', String(b - a), '-i', 'assets/pdoom.mp3',
+    '-ss', String(a), '-t', String(b - a), '-i', 'assets/song.mp3',
     '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'medium', '-crf', '19', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', out],
     { stdio: ['pipe', 'inherit', 'inherit'] });
   const n = Math.round((b - a) * fps), start = Date.now();

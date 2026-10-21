@@ -1,117 +1,95 @@
 # Animation guide (read this before painting a chapter)
 
-This project renders a 156.6 s music video, "I'm Upping My P(doom)", as painted watercolor animation with p5.brush. Frames are rendered offline in headless Chrome, so speed matters less than quality, within a budget. The shot list is in [STORYBOARD.md](STORYBOARD.md). The user's direction: **cute, cartoony, fun colors, lively animation, something happening in every shot, be brave and ambitious.** 
+This project renders *Oh My Claude* (121.56 s) as a kinetic-type music video: **words only, no pictures.** Frames render offline in headless Chrome on plain Canvas2D. The shot list is in [STORYBOARD.md](STORYBOARD.md) and the cast is in [README.md](README.md).
+
+The direction: **a K-pop comeback MV made of scripture.** It should feel expensive, hard-cut, colour-blocked and on the beat, and every word on screen should earn its place.
+
+## The rules
+
+1. **Something moves on every beat.** At 131.5 BPM a beat is 0.456 s. Use cuts, scale pops, colour flips, a new word or a camera punch. A frame that holds still for more than a bar has to be holding still on purpose (see rule 4).
+2. **Words are sung where they're seen.** The hero word on screen lands when it is sung (`wordT(line, word)`). Use `sampled()` for Claude's words: candidates flicker and then collapse onto the word as it is sung. The Fan's words are typed (`typeOn`).
+3. **Never put a karaoke bar on screen.** The lyric is the picture. Not every lyric word has to appear, but the hook words must. The gloss footnote (bottom-left) handles translations, and it's automatic.
+4. **The names are holy.** אֲדֹנָי, الله and Domini are drawn only with `holy()`: gold, upright and still. Nothing glitches, scrambles, stamps, censors, overlaps, crops or steps on them. When a name is on screen the frame calms down, and that contrast is the point. One exception: in c08 the whole phrase *ECCE ANCILLA DOMINI* is set upside down, as van Eyck painted it so heaven could read it. It is still gold and still.
+5. **Type is the only actor.** Allowed shapes are rectangles (colour blocks, UI chrome, bars), lines, glow dots and the asterisk ✶✳. Everything else is letters. Shapes made *from* letters (micrography) are encouraged.
+6. **Typefaces mean characters.** Claude uses `disp` (Unbounded 900), clay or bone. The Fan uses `mono`, lowercase. Scripture uses `bod`, `heb`, `ar`, `kufi` or `frak`. K-pop chrome uses `kr` and `sans`. Don't mix these up casually.
+7. **Keep the bottom-left gloss band clear** (x < 1400, y > 990) while a gloss is showing. Keep the key action inside 96 px title-safe margins.
+8. **Pure functions of t.** Frames render in parallel and out of order. Never use `Math.random()`. Use `hash(i)`, `hashS(str)` or `rng(seed)`, and seed anything that flickers with `stepT(t, n)`. Never carry state between frames. Memoising pure computations is fine.
 
 ## How a chapter works
 
-Each chapter is one file in `src/ch/`, wrapped in an IIFE so its helpers stay private:
+Each chapter is one file in `src/ch/`, wrapped in an IIFE:
 
 ```js
-// src/ch/c03_takeoff.js
+// src/ch/c04_akhnai.js
 (() => {
-  const gym = t => { ... };                       // private helpers: any names, no collisions
-  function stable(t, lt, dur) { ... }             // a shot
-  function singularity(t, lt, dur) { ... }
-  chapter('takeoff', 38.5, 59.0, [[38.5, stable], [41.5, singularity], ...]);
-  CAST.basilisk = (x, y, s, t, o = {}) => { ... }; // only for guests the finale reuses
+  useText('שֵׁדִים', 'נִצְּחוּנִי בָּנַי');           // register every non-Latin string you draw, so its font subsets load
+  const page = (t) => { ... };                         // private helpers
+  function shedim(t, lt, dur) { ... }                  // a shot: paints the whole frame, background included
+  function oven(t, lt, dur) { ... }
+  chapter('akhnai', 87.6, 98.5, [[87.6, shedim], [91.2, oven]]);
 })();
 ```
 
-- `chapter(name, start, end, shots)` registers the chapter. A shot fn is called as `fn(t, lt, dur)` (song time, time since shot start, shot length) and must paint the **entire frame**, background included. Cuts land on each shot's start time.
-- **Frames render in parallel and out of order.** Every shot must be a pure function of `t`: no state that carries between frames, and no `Math.random()`. Use `hash(i)` for stable per-object randomness and `jit(a)` for hand-drawn jitter. `jit` is reseeded 12×/s, which makes the linework "boil" like hand-drawn animation, and that's wanted.
-- Only edit your own chapter file. If a shared helper is missing, write it privately inside your IIFE. If you find a real bug in a shared file, report it; don't edit it. Shared files: core.js, clawd.js, cast.js, props.js, timeline.js, lyrics.js, studio.html, render.mjs.
+A shot is called as `fn(t, lt, dur)`: song time, time since the shot started, and shot length. Only edit your own chapter file. If you need a shared helper, write it privately. Report shared-file bugs instead of fixing them.
 
-## Canvas and layout
+## Canvas
 
-- 1920×1080, y points down, origin at top-left. Everything is drawn in this space unless a camera is active.
-- **The karaoke bar covers the bottom band (about y 975–1070) whenever a lyric is showing.** Keep faces and key action above about y 960.
-- The paper texture is already under every frame, and a paper grain and vignette are multiplied over the top.
-- The timeline adds these automatically: karaoke, brush-wipe chapter breaks at 1.5 / 38.5 / 73.0 / 109.4 s, and a small corner P(doom) meter during chorus windows (hidden whenever your shot draws `meterProp`).
+The canvas is 1920×1080 with y pointing down. `X` is the 2D context. Use raw Canvas2D freely (`X.save()`, `X.translate()`, `X.fillRect()`, gradients and so on), and always balance `save`/`restore`.
 
-## Painting API (core.js)
+## Timing (core.js)
 
-`paint(pts, o)` paints one shape from a point list `[[x, y], ...]`:
+- `BEAT` is 0.456 s and `BAR` is 1.825 s. `barT(n)` / `beatT(n)` give the time of bar or beat n. `barN(t)`, `beatN(t)`, `barOf(t)` and `bpOf(t)` go the other way.
+- `pulse(t, k)` is 1 on every beat and decays; `pulse2` does the same on eighths.
+- `seg(t, a, b)` gives 0..1 progress; `kf(t, [[t0, v0], …], easeFn)` interpolates keyframes, and values can be arrays.
+- `stepT(t, n)` steps time n times a second, for flicker seeds.
+- Easings: `ease`, `easeOut`, `easeIn`, `expo`, `backOut`, `elasticOut`. Also `lerp`, `clamp`, `frac`, `wob(t, f, ph)`, `shakeXY(t, amt)`.
+- **Lyrics:** `LY[i] = [start, end, text, words]`, where `words = [{ w, a, b }]` with the sung start and end of each word. `wordT(li, wi)` is the start of word `wi` of line `li`. Line indices are listed in STORYBOARD.md. `lineAt(t)` and `wordsAt(t)` find what's being sung.
 
-| option | meaning |
-|---|---|
-| `wash, washOp` | flat colour (0–255). Use it for character colours and anything that must read solidly. |
-| `fill, fillOp, bleed, tex, border` | watercolour fill with bleeding edges and pigment texture. Use it for backgrounds, glows, shading and pools of light. `bleed` ~.05–.3, `tex` ~.3–.9, `border` ~.2–.8. |
-| `hatch: { d, a, o, b, c, w }` | hatching lines (dist, angle, `{rand, gradient}`, brush e.g. `'charcoal'` or `'HB'`, colour, weight). Nice for dry-brush texture; use sparingly. |
-| `ink, sw, br` | outline colour (default ink), weight (~.4–2), brush (`'ink'` default, `'inkfine'`). **`ink: null` means no outline.** |
-| `curv` | smooth the outline through the points (0–1) instead of straight segments. |
+## Drawing
 
-Other helpers:
-- **Geometry:** `rectPts(x, y, w, h, jitter)`, `ellPts(cx, cy, rx, ry, n, jitter, rot)`, `rrPts(x, y, w, h, r, jitter)` (rounded rectangle), `starPts(cx, cy, r, inner, n, rot)`, `heartPts(cx, cy, r)`.
-- **Lines:** `inkLine(pts, sw, colour, brush = 'ink', curvature)` draws a stroke along a path. Brushes: `'ink'`, `'inkfine'`, `'dry'` (bristly), plus built-ins `'2B'`, `'HB'`, `'charcoal'`, `'marker'`, `'spray'`, `'rotring'`, `'cpencil'`, `'pen'`.
-- **Transforms:** p5 `push()/pop()/translate()/rotate()/scale()` work with all brush calls.
-- **Palette** `PAL`: `paper, ink, clay, clayDk, clayLt, night, indigo, rose, ochre, sap, teal, violet, cream, sky`. `mixCol(a, b, k)` mixes two hex colours. Any hex colour is fine; stay harmonious (soft, warm, watercolour). Avoid pure black and pure white: use `PAL.ink` / `PAL.night` and `PAL.cream`.
-- **Timing:** `bpOf(t)` gives the beat position (88 BPM, beat = 0.682 s, bar = 2.73 s). Also:
-  - `beatN(t)` integer beat number.
-  - `pulse(t, k)` is 1 on each beat and decays; `pulse2` does the same on eighths. Use them for hits.
-  - `seg(t, a, b)` is 0..1 progress through [a, b].
-  - `kf(t, [[t0, v0], [t1, v1], ...], easeFn)` interpolates keyframes; values may be arrays.
-  - Easings: `ease` (smoothstep), `easeOut`, `easeIn`, `backOut` (overshoot), `elasticOut`. Also `lerp`, `clamp`, `frac`, `wob(t, freq, phase)`, `hash(i)`, `TAU`.
-- **Camera:** `camBegin(cx, cy, zoom, rot)` puts world point (cx, cy) at screen centre; `camEnd()` restores. Use it for pushes, pans, tilts, whips and zoom-outs. `shakeXY(t, amount)` gives [dx, dy] shake to add to cx/cy on hits. One level only; always pair it with `camEnd()`.
-- **Lettering** (Permanent Marker, with an ink drop-shadow). Letters are placed through the active camera automatically, but not through your own `push/translate`, so give letter coordinates in world space.
-  - `letter(txt, x, y, size, colour, { pop, rot, alpha, ink:false, stroke, font, align, screen:true })`. `pop` is 0..1 appear progress with overshoot.
-  - `sfx(txt, x, y, size, colour, age, { life, rot })` is a comic sound effect that pops in, wobbles and fades out.
-  - Letters are composited onto the painting at `flushLetters()`. That runs automatically after your shot, so anything painted later (wipes) covers them. Call `flushLetters()` yourself mid-shot if you need paint over a letter.
-- **Full-frame effects** (screen space, outside the camera):
-  - `flash(k, colour)` paints a full-frame wash at strength k.
-  - `iris(cx, cy, r, colour)` paints everything outside a circle.
-  - `irisShape(pts, colour)` paints everything outside any star-shaped outline (mouth-shaped reveals, hearts, keyholes).
+- `bg(col)` fills the frame, `rect(x, y, w, h, col, a)` draws a rectangle, `glowDot(x, y, r, col, a)` draws a soft light, and `vgrad` / `rgrad` make gradients.
+- `txt(s, x, y, o)` draws one line of type. Options:
+  - `f` (font key) and `size`.
+  - `w`: weight 400, 500, 700 or 900.
+  - `it`, `col` and `a` (alpha).
+  - `al`: `'center'` by default.
+  - `base`: `'middle'` by default.
+  - `rot`, `sx`, `sy` and `track` (letter spacing in px).
+  - `glow` (blur px) and `glowCol`.
+  - `stroke` and `sw` for outlined type; add `fillOff: true` for outline-only.
+  - `dir: 'rtl'` for Hebrew and Arabic.
+  - `op`: composite op.
+- `measure(s, o)` returns the width; `fitSize(s, o, maxW)` gives the largest size that fits.
+- Font keys: `disp` Unbounded, `bod` Bodoni Moda, `heb` Frank Ruhl Libre, `ar` Amiri, `kufi` Reem Kufi, `mono` JetBrains Mono, `kr` Black Han Sans (Hangul), `frak` UnifrakturMaguntia (weight 400 only), `sans` Inter.
+- `textPath(s, pts, o)` lays glyphs along a polyline. `o.repeat` repeats the string and `o.start` offsets it.
+- `glyphPts(s, o, step)` returns a memoised point grid covering the glyphs, centred on 0,0. Use it for letters made of letters and for particle dissolves.
+- **Layers:** `withLayer(i, ctx => …)` draws into an offscreen frame-size canvas (indices 0–13 are yours; 14 and 15 are used by `masked`). `blit(c, { op, a, filter, s })` composites it. `masked(maskFn, contentFn)` draws content only where the mask has ink: text filling a shape, a shape filled with text.
+- **Camera:** `camBegin(cx, cy, zoom, rot)` / `camEnd()`.
+- `PAL` colours: `void ink plum bone paper clay clayDk gold amber pink blush lilac violet cyan mint sky lapis blood`. `mixCol(a, b, k)` mixes two colours and `rgba(hex, a)` adds alpha.
 
-## Characters
+## Signature devices (fx.js)
 
-**Clawd**: `clawd(x, y, u, o)`. (x, y) is the ground point between its feet; `u` is the unit. The body is 10u wide × 6u tall, and 8u tall with legs.
-- **Pose:** `dy` (body units, negative = up), `sq` (squash; negative stretches), `rot`, `flip`, `sx`/`sy`, `aL`/`aR` (arm angles: 0 = out sideways, positive = raised, negative = down), `walk` (phase), `noLegs`, `noShadow`.
-- **Face:** `eyes`: normal, look (+ `lookX`/`lookY` −1..1), happy, closed, wink, narrow, angry, scared, spark (stars), red, heart, x, swirl, dot, shades. `mouth`: o, O, smile, grin, flat, wobble, cat. `blush`.
-- **Colour:** `col`/`dk`/`lt` override the body colours (e.g. pale when scared, rosy when in love).
-- **Hats:** party, hard, crown, halo, wizard, hood, top, fedora, band, sweatband, cat (ears + whiskers), masq (masquerade mask), mask, bowtie.
-- **Lunchbox mouth:** `lid` 0..1 hinges the top of the body open with teeth.
-- **Hooks:** `draw(u, sw)` draws accessories in body-local space (body spans x −5u..5u, y −8u..−2u). `armL(u, sw)` / `armR(u, sw)` are called at the arm tip in arm space (+x = outward along the arm), for holding props.
-- **Emote:** `emote` + `emoteK` pops a reaction mark by the head: sweat, spark, heart, anger, music, swirl, zzz, !, ?, !?, !!.
-- **Mood changes:** never snap between faces. Use `mood(t, [[t0, 'normal'], [t1, 'scared', 'sweat'], [t2, 'happy', 'heart']])`. It returns `{ eyes, squint, take, emote, emoteK }`; spread it into `clawd()` for a blink-squash-and-pop change.
-- **Dancing:** `move(style, t, seed)` returns beat-synced pose offsets: bounce, hop, roof (arms up), sway, spin, wave, walk, run, idle, stomp, shimmy, mix. `dancer(x, y, u, style, t, extra)` = `clawd` + `move`.
-- **Size guide:** tiny u≈6–10, normal u≈16–22, hero/close-up u≈30–60. In chorus and dance shots the lead Clawd should be big (roughly 40% of frame height).
+- `sampled(word, x, y, o, p)` generates Claude's words. At p = 0 the candidates appear; at `o.collapse` (default .75) they collapse onto the word; p ≥ 1 holds the word. Map p so the collapse lands on the sung time, for example `p = .75 + (t - wordT(li, wi)) / .4`. Pass `o.cands` to script the near-misses (the jokes live there), `o.bars: false` to hide the probability bars, and `o.seed`.
+- `typeOn(s, x, y, o, p)` is the Fan typing, with the cursor riding the end. `cursor(x, y, h, col, a, solid)` is the block cursor, which blinks on the beat. `scramble(s, p, seed)` resolves glitch characters into the string.
+- `tile(s, o, t)` fills the frame with K-pop merch rows that scroll in alternating directions (`size`, `col`, `col2`, `rot`, `speed`, `sep`).
+- `anagram(a, b, x, y, o, p)`: letters of a fly to their places in b.
+- `stamp(s, x, y, size, age, { sub, rot, col })` slams down the broadcast-ban stamp.
+- `holy(s, x, y, o)` is the only way to draw a divine name.
+- `post({ bloom, chroma, grain, vig, scan, gloss: 0, glossCol, glossBg })` sets post-processing for this frame. Defaults are `bloom .35, chroma 0, grain .07, vig .45`. Use `chroma` (0–1.5) on hits and glitch beats, never on frames with a holy name.
 
-**The Researcher**: `researcher(x, y, s, o)`, the singer. A small human: lab coat, round glasses, scribbly hair. About 13.2s tall; `s ≈ 0.75u` makes their head level with Clawd's eyes.
-- **Pose:** `dy`, `sq`, `rot`, `flip`, `spin`, `aL`/`aR` (same convention as Clawd; about −1.25 hangs), `walk` or `run` (phase), `sit`, `back` (seen from behind).
-- **Face:** `eyes`: dot, wide, star, swirl, closed, sad, x, heart, look. `brows`: worried, angry, up. `mouth`: smile, o, O, flat, wobble, grin. Also `hairUp` 0..1, `glassesTilt`, `bowtie`, `blush`, `squint` (from `mood`), `emote`/`emoteK`.
-- **Hooks:** `draw(s, sw)` and `handL(s, sw)` / `handR(s, sw)` (called at the hand centre, for clipboards, mugs, trays and so on).
-- `researcherDancer(x, y, s, style, t, extra)` makes them dance with `move()`.
+## Look
 
-Troupe Clawds are just more `clawd()` calls in hats. Guest monsters are drawn by whichever chapter introduces them, and exported on `CAST` for the finale.
-
-## Props (props.js): the recurring theatre set
-
-- `stageBack(t, o)` draws the backdrop (default: rotating watercolour sunburst in `o.a`/`o.b`; `o.backdrop(t)` replaces it) and the wooden floor from y 800. `o.spots = [[x, colour], ...]` adds spotlight cones.
-- `stageFront(t, o)` draws the side curtains and valance (paint it last). `o.curtain` 0..1 closes them; `o.alarm` 0..1 adds a red siren wash.
-- `meterProp(x, y, s, v, o)`: the P(doom) thermometer standing on the floor (s = 1 is about 560 px tall). Pass `v = pdoomAt(t)`. `o.cracked` 0..1, `o.glow`.
-- `pumpProp(x, y, s, h, hoseTo)`: bicycle pump, handle height h (0..1). `pumpH(t)` drives h so the down-stroke lands on every beat.
-- `sunburst(cx, cy, a, b, rot, n, r, op)`, `spotlight(x, colour)`.
-
-## Style rules
-
-- **Look:** hand-painted watercolour and ink, like a picture book. Characters get flat `wash` colour plus ink outlines (sw about 0.8–1.6 depending on size). Backgrounds are soft watercolour `fill` shapes, usually with no outline or a thin one. Glows and light are low-opacity fills. Texture comes from fills and occasional hatch, not from noise.
-- **Colour:** each chapter has its palette in STORYBOARD.md. Keep it fun and saturated but soft. Contrast between character and background must be clear.
-- **Motion:** everything moves: cameras drift or push, characters bounce on the beat (`pulse`, `move`), and hits land on beats. Use squash and stretch, anticipation and overshoot (`backOut`, `elasticOut`). Put the important action within a shot on beat times (beats fall at `0.21 + n × 0.682` s).
-- **Readability:** one clear focal action per shot, with a big silhouette. Shots are short (1.4–4 s), so the gag must read instantly.
-- **Performance:** aim for ≤ 2.5 s per frame and never more than about 4 s. The render log prints ms/frame. Cost comes from the number of `fill` shapes and strokes: hundreds are fine, thousands are not. Prefer fewer, bigger shapes.
+- **Colour-block sets.** Most shots are a flat field (`bg`) with one or two hero words and a texture layer (tiled words, micrography, UI chrome). Change the field colour on downbeats.
+- **Scale contrast.** Hero words should be huge (300–600 px, often cropped by the frame edge; only cropping a holy name is forbidden), against tiny mono annotations. Avoid the medium-size middle.
+- **Depth from type.** Stack layers: a faint, huge background word, the hero word and small foreground annotations. Move them at different speeds with the camera.
+- **Transitions are cuts on the beat** unless the storyboard says otherwise. Do smears, punch-ins and whip pans with the camera and `chroma`.
+- **Performance.** Aim for under 400 ms a frame. Shadow blur (`glow`) is expensive on big text, so use `glowDot` behind it instead where you can. Cap `tile` rows at sizes of 60 px or more.
 
 ## Checking your work
 
-Run from the project root (the renderer uses the real GPU; several agents can render at once):
-
-```
-node render.mjs --sheet=38.6,39.3,40.1,40.9,41.6,42.3 --cols=3 --w=640 --out=out/check/c03_a.jpg
-node render.mjs --stills=39.5,43.2 --out=out/check/c03_full
+```bash
+node render.mjs --sheet=60.0,60.5,61,61.5,62,62.5 --cols=3 --out=out/c03.jpg   # look at it
+node render.mjs --clip=58:66 --fps=15 --out=out/c03.mp4                         # feel the timing
 ```
 
-A sheet puts several times on one image (it prints ms per frame); open it with the Read tool and look carefully. Check:
-- the first and last frames of every shot, and a few in between;
-- that motion reads across consecutive times (e.g. every 0.1 s around a hit);
-- transitions into and out of your chapter;
-- that nothing important sits under the karaoke band.
-
-Iterate until each shot looks good: charming, readable, lively, on-model. Fix whatever looks off: scale, contrast, clutter, stiffness.
+Look at your sheets. Check that the hero word is readable at thumbnail size, that it lands on the sung word, that something changes every beat, and that nothing touches a holy name.

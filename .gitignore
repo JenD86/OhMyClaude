@@ -1,3 +1,27 @@
 node_modules/
 out/
-assets/source.mp4
+
+# Large media files — keep out of the repo
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mpg
+*.mpeg
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.aif
+*.aiff
+
+# Exceptions: small assets required to render
+!assets/song.mp3
+!assets/fonts/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.log

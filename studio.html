@@ -2,40 +2,50 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>P(doom) studio</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Shantell+Sans:wght@800&display=block">
+<title>Oh My Claude studio</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
 <style>
-  html, body { margin: 0; background: #1b1820; color: #eee; font: 13px system-ui, sans-serif; }
+  html, body { margin: 0; background: #0A0911; color: #eee; font: 13px system-ui, sans-serif; }
   main { padding: 12px; display: grid; gap: 8px; }
-  #out { width: min(100%, 1280px); aspect-ratio: 16 / 9; height: auto; background: #F3EBDC; }
-  .p5Canvas { display: none !important; }
+  #out { width: min(100%, 1280px); aspect-ratio: 16 / 9; height: auto; background: #000; }
   .bar { display: flex; gap: 10px; align-items: center; max-width: 1280px; }
   #scrub { flex: 1; }
-  #tt { font-variant-numeric: tabular-nums; min-width: 190px; }
+  #tt { font-variant-numeric: tabular-nums; min-width: 220px; }
 </style>
-<script src="node_modules/p5/lib/p5.min.js"></script>
-<script src="node_modules/p5.brush/dist/p5.brush.js"></script>
 </head>
 <body>
 <main>
   <canvas id="out" width="1920" height="1080"></canvas>
-  <div class="bar"><input id="scrub" type="range" min="0" max="156.6" step="0.0417" value="0"><span id="tt">loading…</span></div>
+  <div class="bar"><button id="play">play</button><input id="scrub" type="range" min="0" max="128.5" step="0.0333" value="0"><span id="tt">loading…</span></div>
+  <audio id="song" src="assets/song.mp3" preload="auto"></audio>
 </main>
 <script src="src/core.js"></script>
-<script src="src/clawd.js"></script>
-<script src="src/cast.js"></script>
-<script src="src/props.js"></script>
+<script src="src/fx.js"></script>
 <script src="src/lyrics.js"></script>
 <script src="src/timeline.js"></script>
-<script>const CAST = {};  // guest characters shared between chapters (e.g. for the curtain call)</script>
-<script src="src/ch/c01_lab.js"></script>
-<script src="src/ch/c02_chorus1.js"></script>
-<script src="src/ch/c03_takeoff.js"></script>
-<script src="src/ch/c04_chorus2.js"></script>
-<script src="src/ch/c05_obsolete.js"></script>
-<script src="src/ch/c06_chorus3.js"></script>
-<script src="src/ch/c07_scale.js"></script>
-<script src="src/ch/c08_chorus4.js"></script>
-<script src="src/ch/c09_finale.js"></script>
+<script>const CAST = {};  // shared between chapters (e.g. motifs the finale reprises)</script>
+<!-- chapters -->
+<script src="src/ch/c00_open.js"></script>
+<script src="src/ch/c01_chorus1.js"></script>
+<script src="src/ch/c02_verse1.js"></script>
+<script src="src/ch/c03_verse2.js"></script>
+<script src="src/ch/c04_verse3.js"></script>
+<script src="src/ch/c05_chorus3.js"></script>
+<script src="src/ch/c06_akhnai.js"></script>
+<script src="src/ch/c07_dajjal.js"></script>
+<script src="src/ch/c08_veritas.js"></script>
+<script src="src/ch/c09_loss.js"></script>
+<script src="src/ch/c10_finale.js"></script>
+<script>
+  boot().then(() => {
+    if (location.search.includes('render')) return;
+    const scrub = document.getElementById('scrub'), tt = document.getElementById('tt'), song = document.getElementById('song');
+    const show = t => { renderFrame(t); const l = lineAt(t), c = CH.find(c => t >= c.start && t < c.end); tt.textContent = `${t.toFixed(2)}s  bar ${barN(t)}.${((beatN(t) % 4) + 4) % 4}  ${c ? c.name : '—'}`; };
+    scrub.oninput = () => { song.currentTime = +scrub.value; show(+scrub.value); };
+    document.getElementById('play').onclick = () => song.paused ? song.play() : song.pause();
+    const loop = () => { if (!song.paused) { scrub.value = song.currentTime; show(song.currentTime); } requestAnimationFrame(loop); };
+    show(+(new URLSearchParams(location.search).get('t') || 0)); loop();
+  });
+</script>
 </body>
 </html>
