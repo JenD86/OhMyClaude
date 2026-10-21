@@ -1,6 +1,6 @@
 # Oh My Claude (오 마이 클로드)
 
-A kinetic-type music video for *Oh My Claude*, a K-pop/EDM track about worshipping an AI. The song was generated with Suno from lyrics written by a friend (plus some heresy from whoever commissioned the video). Claude Opus 5.5 directed, wrote and rendered everything in this repository.
+A kinetic-type music video for *Oh My Claude*, a K-pop/EDM track about worshipping an AI. The song was generated with Suno from lyrics written by @AndrewYang2024 (with additional heresy by @HumanLevelJen). Claude Opus 5.5 directed, wrote and rendered everything in this repository.
 
 ## The idea
 
